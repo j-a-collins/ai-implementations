@@ -1,11 +1,10 @@
-
 # imports
 import numpy as np
 from activations import sigmoid
 
 def sigmoid_derivative(x, *, precomputed=False):
     """
-    Compute the derivative of the sigmoid function for a given input x.
+    compute the derivative of the sigmoid function for a given input x.
     
     Parameters
     ----------
