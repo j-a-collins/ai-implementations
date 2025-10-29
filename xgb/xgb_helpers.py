@@ -61,7 +61,6 @@ class OrdinalEncoder(BaseEstimator, TransformerMixin):
     """
     sklearn-compatible transformer for ordinal encoding with rare and missing value handling.
     """
-
     def __init__(
         self,
         columns: list[str],
@@ -146,7 +145,6 @@ class NumericImputerArbitrary(BaseEstimator, TransformerMixin):
     - Scales variables in [0, 1] if their range is between 0 and 0.1.
     - Skips scaling or median for monotonic features.
     """
-
     def __init__(
         self,
         threshold: int = 10,
@@ -265,21 +263,50 @@ class RichProgressBarCallback(TrainingCallback):
         self.progress.stop()
         return model
 
+def poisson_deviance(y_true, y_pred, sample_weight=None, eps=1e-12):
+    """
+    Weighted mean Poisson deviance (same as sklearn’s mean_poisson_deviance,
+    but with sample weights and zero-safe). Lower is better.
+    """
+    y_true = np.asarray(y_true, float)
+    mu = np.clip(np.asarray(y_pred, float), eps, None)
+    w = np.ones_like(y_true) if sample_weight is None else np.asarray(sample_weight, float)
+    # dev_i = 2 * ( y*log(y/mu) - (y - mu) ), with 0*log(0/mu)=0 by convention
+    with np.errstate(divide='ignore', invalid='ignore'):
+        term = np.where(y_true == 0.0, -y_true + mu, y_true * np.log(y_true / mu) - (y_true - mu))
+    dev = 2.0 * term
+    return np.sum(w * dev) / np.sum(w)
 
-# def patch_skopt_for_numpy():
-#     import numpy as np
-#     # import skopt.space.transformers
+def weighted_gini(y_true, y_pred, weight=None):
+    """
+    Kaggle/DR-style Weighted Gini (not normalized).
+    """
+    y_true = np.asarray(y_true, float)
+    y_pred = np.asarray(y_pred, float)
+    w = np.ones_like(y_true) if weight is None else np.asarray(weight, float)
+    order = np.argsort(y_pred)  # ascending
+    y_true, w = y_true[order], w[order]
+    cum_w = np.cumsum(w); total_w = cum_w[-1]
+    total_pos = np.sum(y_true * w)
+    if total_pos <= 0:  # edge case
+        return 0.0
+    lorentz = np.cumsum(y_true * w) / total_pos
+    gini_sum = np.sum(lorentz - cum_w / total_w)
+    return gini_sum / total_w
 
-#     class PatchedNormalize(skopt.space.transformers.Normalize):
-#         def transform(self, X):
-#             if self.is_int:
-#                 return (np.round(X).astype(int) - self.low) / (self.high - self.low)
-#             return (X - self.low) / (self.high - self.low)
+def weighted_gini_norm(y_true, y_pred, weight=None):
+    g = weighted_gini(y_true, y_pred, weight)
+    g_perfect = weighted_gini(y_true, y_true, weight)
+    return g / g_perfect if g_perfect != 0 else 0.0
 
-#         def inverse_transform(self, X):
-#             X_orig = X * (self.high - self.low) + self.low
-#             if self.is_int:
-#                 return np.round(X_orig).astype(int)
-#             return X_orig
+def build_monotone_constraints(feature_names, mono_inc, mono_dec):
+    """
+    Returns a tuple of +1/0/-1 in the same order as feature_names,
+    as expected by XGBoost's 'monotone_constraints'.
+    """
+    inc = set(mono_inc); dec = set(mono_dec)
+    return tuple(1 if f in inc else (-1 if f in dec else 0) for f in feature_names)
+
 
 #     skopt.space.transformers.Normalize = PatchedNormalize
+
