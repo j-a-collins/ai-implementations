@@ -1,0 +1,16 @@
+[tool.black]
+line-length = 100
+target-version = ["py311"]
+preview = true
+skip-string-normalization = true
+skip-magic-trailing-comma = true
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.venv
+  | build
+  | dist
+  | .*/migrations
+  | node_modules
+)/
+'''
